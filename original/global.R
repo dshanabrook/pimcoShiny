@@ -11,7 +11,7 @@
 ########################
 #gets the current NAV, discount.  
 #download excel file from Pimco 
-#Open with excel! or convert with https://www.zamzar.com then save as xsl
+#Open with excel!  then save as xsl
 #move to PimcoFunds.xsl in shiny
 #
 #another method, which is not being used:
@@ -23,123 +23,106 @@
 ##############################
 #install.packages("quantmod")
 #library(quantmod)
-library("readxl")
-library("ggrepel")
+library(readxl)
+library(ggrepel)
 #packageVersion("readxl")
-library("httr")
-library("tseries")
-library("lubridate")
-library("dplyr")
-library("shiny")
-library("ggplot2")
-library("shinyWidgets")
+library(httr)
+library(tseries)
+library(lubridate)
+library(dplyr)
+library(shiny)
+library(ggplot2)
+library(shinyWidgets)
 pimcoCurrenttsv <- ("PimcoFunds.tsv")
 
+specialPDO <- 0.49
 cefTickers <- list("**Muni NY-CA**","PNF","PNI","PYN","PCQ","PCK","PZC",
                    "**Municipal***","PMF","PML","PMX",
-                   "***Mortgage***","PDO","PDI","PAXS",
+                   "***Mortgage***","PDO","PDI",
                    "**Corporation*","PCM","PTY","PFL","PFN","PHK",
                    "*****Misc*****","PGP","RCS","PCM","NRGX")
 cefMuni2 <- list("PNF","PNI","PYN","PCQ","PCK","PZC")
 cefMuni <- list("PMF","PML","PMX")
-cefMort <- list("PDI","PDO","PAXS")
+cefMort <- list("PDI","PDO")
 cefCorp <- list("PCM","PTY","PFL","PFN","PHK")
 cefMisc <- list("PGP","RCS","PCM","NRGX")
-graphChoices <- list("Yield","NII yield", "NII", "roll6", "roll3","roll1","UNII","discount/NII","discount/yield")
+graphChoices <- list("yield","yieldNII", "NII", "roll6", "roll3","roll1","UNII","discount","reported")
 mostRecentData <- data.frame()
 
 options(warn= -1)
-
-theMonths <- c("January","February","March","April","May","June","July","August","September","October","November","December")
-newFormatMonths <- c("October","November","December", "January","February")
-lastYearsMonths <- c("November","December")
-  
+theMonths <- c("January","February","March","April","May","June","July")
+last5Months <- c("June","July","August","September","October","November","December")
+#,"PZC"
 chosenTickers <- c("PCQ","PCK","PMF","PML","PMX","PNF","PNI","PYN","PCM","PTY","PCN","PHK","PKO","PFL","PFN","RCS","PGP","PDO")
 testTickers <- c( "PDO")
 chosenFundNames <- c("PCM Fund", "New York Municipal Income Fund III", "New York Municipal Income Fund II", "New York Municipal Income Fund", "Municipal Income Fund III", "Municipal Income Fund II", "Municipal Income Fund", "Income Strategy Fund II", "Income Strategy Fund", "Income Opportunity Fund", "High Income Fund", "Global StocksPLUS® & Income Fund", "Energy and Tactical Credit Opportunities Fund", "Dynamic Income Opportunities Fund", "Dynamic Income Fund", "Dynamic Credit and Mortgage Income Fund", "Corporate & Income Strategy Fund", "Corporate & Income Opportunity Fund", "California Municipal Income Fund III", "California Municipal Income Fund II", "California Municipal Income Fund")
 
+getDiscount <- function(){
+  df <- read.csv(pimcoCurrenttsv, sep="\t", skip=4,header=F)[c(TRUE,FALSE), ]
+  df <- df[1:21,]
+df <- data.frame(df$V2,df$V8)
+names(df) <- c("Ticker","discount")
+dfDiscount <- df[df$Ticker!="",]
+return(dfDiscount)
+}
+
+# getNAV <- function(){
+#   df <- read.csv("PimcoFunds.txt",sep = '/t', skip=4,error_bad_lines=F,stringsAsFactors=False,strip.white=T,blank.lines.skip = T)
+#   df <- data.frame(df$Symbol,df$Daily)
+#   names(df) <- c("Ticker","NAV")
+#   df <- df[df$Ticker!="",]
+#   df$NAV <- as.numeric(as.character(df$NAV))
+#   return(df)
+# }
+
+#gets the current NAV, discount.  
+#download excel file from Pimco
+#resave as xls file
+#move to shinyPimco
 getNAV <- function(){
   #4 is nav, 8 is discount
   xlFile <- "PimcoFunds.xls"
-  ############
-  # skip changed to 2.  unclear why, maybe back to 4 next time
-  #############
-  x <- read_excel(xlFile,skip=1,n_max=46,col_names=F,
-                  .name_repair = "unique_quiet")
-  names(x) <- c("Name","Symbol","Share Class","Daily NAV $","Daily Change $","Market Price $","Market Price Daily Change $","Premium / Discount %","Distribution Rate % (NAV)","Market Price Distribution Rate","Distribution Rate % (NAV)","30-Day SEC Yield %","30-Day SEC Yield % (Unsubsidized)","7-Day SEC Yield**","Latest Distribution ($ / Share)","Distribution (YTD)","Latest Dividend Distribution Payable Date","Latest Dividend Distribution Record Date","Latest Dividend Distribution Ex-Dividend Date")
-  #remove na rows
-  x <- x[is.na(x[,2])==0,]
-  write.csv(x[,1:10],"PimcoFunds.csv",row.names=F)
-  #desired columns, c("Ticker","NAV","discount","NAVdistribution","MarkDistribution")
-  xx <- x[,c(2,4,8,9,11)]
-  names(xx) <- c("Ticker","NAV","discount","NAVdistribution","MarkDistribution")
-  
+  x <- read_excel(xlFile,skip=4,n_max=45,col_names=F,)
+  x <- x[!is.na(x[,1]),]
+  names(x) <- 1:ncol(x)
+  xx <- subset(x, select=(c(2,4,8,9,10)))
+  names(xx) <- c("Ticker","NAV","discount","distributionNAV","distributionMarket")
   xx$discount <- as.numeric(xx$discount)
-  xx$NAVdistribution <- as.numeric(xx$NAVdistribution)
-  xx$MarkDistribution <- as.numeric(xx$MarkDistribution)
-
+  xx$distributionNAV <- as.numeric(xx$distributionNAV)
+  xx$distributionMarket <- as.numeric(xx$distributionMarket)
   return(xx)
 }
 
-getPimcoData <- function(chosenTickers=cefMort) {
+getPimcoData <- function(chosenTickers) {
   #https://stackoverflow.com/questions/41368628/read-excel-file-from-a-url-using-the-readxl-package
   
   urlFromPimco <- "https://www.pimco.com/handlers/displaydocument.ashx?c=72201Y101&wd=UNII%20Report&fn=UNII%20Website%20File.xlsx&id=rc%2bNQHWWEucpe9Pl8GR4ZuchIBLSukAip55SJ6LR8CvmbW1h2ScLKkOI8wUGjjRVlqtvi4F2FCctG85Wa0WChwV9Lr8dxP8l9utktFaxMqbNE%2fu%2fmFZlP0en3TVZekc0GzTgcCj1yX2gpNL1AZPRb5eQpeObnFEmUNlpVN3DAYZ%2fCssLsoXU1FoLc793R4xHAmyp5THHNfyhxlsD%2fW8Opbmz04NLRE67WEWXOV0pe7cybRxYhZW585hPm3qR7xciSwUdtbMgrGhXmRzLL7Wl7588zkPbqsJjbKG953mv6J8ylrComp7qNhTVsS3tineeO4CmeqqcvbnzENMOKXLeQu1SoejRODtCrcOXbJyn1HEtHPyGI%2fZvbM7dtLOGdEhQGzVX9wd7xtNk9vUATKjZnUheCFYLOZcG9ENqjMVY4zwhm1ZzsR3bTIXOCIeVKtsA"
   GET(urlFromPimco, write_disk(tf <- tempfile()))
   sheetMonths <- excel_sheets(tf)
-  numberOfSheets <- length(sheetMonths) -1 
+  numberOfSheets <- length(sheetMonths)
   #set the names from Pimco to these
- # n <- c("FundName", "Ticker", "CurrentFiscal", "NII", "UNII", "MonthlyDistribution", "Rolling3Mon", "Rolling6Mon", "FiscalYear")
- # n2 <-c("FundName", "Ticker", "CurrentFiscal", "NII", "UNII", "Month3NII","MonthlyDistribution", "Rolling3Mon", "Rolling6Mon", "FiscalYear")
-
+  n <- c("FundName", "Ticker", "CurrentFiscal", "NII", "UNII", "MonthlyDistribution", "Rolling3Mon", "Rolling6Mon", "FiscalYear")
   data <- data.frame()
- 
+  
   currentYear <- as.numeric(format(Sys.Date(), format="%Y"))
+  pastYear <- currentYear - 1
   currentMonth <- as.numeric(format(Sys.Date(), format="%m"))
-  sheetMonths <- excel_sheets(tf)
   
   for (i in 1:numberOfSheets) {
-    
-    dfTibble <-  read_xlsx(tf, skip=9, sheet=i)
+    dfTibble <-  read_xlsx(tf, skip=10, sheet=i, col_names=as.character(n), col_types = c("text","text","date","numeric","numeric","numeric","numeric","numeric","date"))
     dfTibble <- dfTibble[dfTibble$Ticker %in% chosenTickers,]
     df <- data.frame(dfTibble)
-    #table names changed.  
-    names(df)[names(df) == 'Current Fiscal\r\nYear End']  <- 'CurrentFiscal'
-    names(df)[names(df) == 'Estimated Net Investment Income (NII)(1) \r\nFiscal Year \r\nto Date']  <- 'NII'
-    names(df)[names(df) == 'Estimated Undistributed \r\nNet Investment \r\nIncome -\r\nUNII/Estimated (ROC)(1)'] <- 'UNII'
-    names(df)[names(df) == 'Monthly Distribution\r\nper Common\r\nShare(2)'] <- 'MonthlyDistribution'
-    names(df)[names(df) == '3 Month Rolling Coverage Ratio(3)'] <- 'Rolling3Mon'
-    names(df)[names(df) == '6 Month Rolling Coverage \r\nRatio (3)'] <- 'Rolling6Mon'
-    names(df)[names(df) == 'Fiscal Year \r\nto Date Distribution Coverage\r\nRatio(4)'] <- 'FiscalYear'
-
-    names(df)[names(df) == 'Current.Fiscal..Year.End']  <- 'CurrentFiscal'
-    names(df)[names(df) == 'Estimated.Net.Investment.Income..NII..1....Fiscal.Year...to.Date']  <- 'NII'
-    names(df)[names(df) == 'Estimated.Fiscal.Year.to.Date.Net.Investment.Income..NII..1.']  <- 'NII'
-    names(df)[names(df) == 'Estimated.3..Month.Average...Net.Investment...Income..NII.']  <- 'NII'
-    names(df)[names(df) == 'Estimated.Undistributed...Net.Investment...Income....UNII.Estimated..ROC..1.'] <- 'UNII'
-    names(df)[names(df) == 'Monthly.Distribution..per.Common..Share.2.'] <- 'MonthlyDistribution'
-    names(df)[names(df) == 'X3.Month.Rolling.Coverage.Ratio.3.'] <- 'Rolling3Mon'
-    names(df)[names(df) == 'X6.Month.Rolling.Coverage...Ratio..3.'] <- 'Rolling6Mon'
-    names(df)[names(df) == 'Fiscal.Year...to.Date.Distribution.Coverage..Ratio.4.'] <- 'FiscalYear'
-#extra column added at some point,
-   df = df[,!(names(df) %in% c("...11"))]
-   df = df[,!(names(df) %in% c("NII.1"))]
-   
-   
-    sheetMonthsNumber <- match(sheetMonths, month.name)
-    monthsMultiYear <- max(sheetMonthsNumber) < length(sheetMonths)
- #   print(paste (sheetMonths[i], sheetMonthsNumber[i], monthsMultiYear))
+    #check for months of last year
     theYear <- currentYear
-    if (monthsMultiYear){
-      if (sheetMonthsNumber[i] > length(sheetMonths))
-      theYear <- currentYear -1
-    }
-    
+    if (sheetMonths[i] %in% last5Months)
+      theYear <- pastYear
     df$date <- as.Date(paste(sheetMonths[i],"-","15","-",as.character(theYear), sep=""), format = "%b-%d-%Y")
-  
+    
     for (j in 1:nrow(df)) { 
       marks <- get.hist.quote(as.character(df[j,"Ticker"]), start=df[j,"date"],quote=c("Open"), quiet=T)
+      #  fundNames <- get.hist
       df[j,"Mark"] <- marks[1]
+     # df[j,"markLast"] <- marks[nrow(marks)]
     }
     data <- rbind(data, df)
   }
@@ -147,7 +130,6 @@ getPimcoData <- function(chosenTickers=cefMort) {
   #******************
   data$CurrentFiscal <- as.Date(data$CurrentFiscal)
   data$date <- as.Date(data$date)
-  data$MonthlyDistribution <- as.numeric(data$MonthlyDistribution)
   #calculate monthly yield, NII-prevNII/dividend
   #data$newFiscal <- format(data$date,"Y")==format(lag(data$date),"Y")
   data <- data %>%
@@ -180,10 +162,17 @@ getPimcoData <- function(chosenTickers=cefMort) {
  dfNAV <- getNAV()
  data <- merge(data,dfNAV,by="Ticker")
  write.csv(data, "dataForDebugging.csv")
+# discount.df <- data[data$date==max(data$date),]
+#data$discount <- (data$Mark-data$NAV)/data$NAV
   return(data)
   #######
   #https://readxl.tidyverse.org/articles/articles/readxl-workflows.html
 }
+
 getMostRecent <- function(data){
   return(data[data$date==max(data$date),])
 }
+
+#x <- getPimcoData(chosenTickers)
+#mostRecentDataP <- getMostRecent(x)
+

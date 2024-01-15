@@ -1,0 +1,14 @@
+name: pimcoShiny
+title: pimcoShiny
+username:
+account: bravo
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 4883022
+bundleId: 5998028
+url: https://bravo.shinyapps.io/pimcoShiny/
+when: 1654907594.0558
+lastSyncTime: 1654907594.05581
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: PimcoFunds.txt

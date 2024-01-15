@@ -9,7 +9,12 @@ ui <- fluidPage(
       actionButton("submit", label = "Submit"),
       selectInput("graphChosen", "Graph", graphChoices),
       checkboxInput("useFacet", "Facet plot", FALSE),
-    
+      # prettyCheckboxGroup("chosenTickers", 
+      #                    label="Choose Funds.", 
+      #                     choices=cefTickers,
+      #                     inline=TRUE,
+      #                    plain=T
+      #                    )
       prettyCheckboxGroup("muniT", 
                           label="Municipal", 
                           choices=cefMuni,
@@ -31,7 +36,7 @@ ui <- fluidPage(
       prettyCheckboxGroup("mortT", 
                           label="Mortgage", 
                           choices=cefMort,
-                          selected = (c("PDI","PDO","PAXS")),
+                          selected = (c("PDI","PDO")),
                           inline=TRUE,
                           plain=T
       ),
